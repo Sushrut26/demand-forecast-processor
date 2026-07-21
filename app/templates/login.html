@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block nav %}{% endblock %}
+{% block title %}Sign in · {{ app_name }}{% endblock %}
+{% block content %}
+<div class="min-h-[70vh] flex items-center justify-center">
+  <div class="w-full max-w-sm">
+    <div class="text-center mb-6">
+      <div class="mx-auto mb-3 inline-flex h-14 w-14 items-center justify-center rounded-xl bg-brand-600 text-2xl text-white shadow">📈</div>
+      <h1 class="text-xl font-semibold text-slate-800">{{ app_name }}</h1>
+      <p class="text-sm text-slate-500">Sign in to run your forecasts</p>
+    </div>
+    <div class="rounded-xl bg-white p-6 shadow-sm border border-slate-200">
+      {% if error %}
+      <div class="mb-4 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{{ error }}</div>
+      {% endif %}
+      <form method="post" action="/login" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1">Email</label>
+          <input name="email" type="email" required autofocus
+                 class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-600 focus:ring-1 focus:ring-brand-600 outline-none" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1">Password</label>
+          <input name="password" type="password" required
+                 class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-600 focus:ring-1 focus:ring-brand-600 outline-none" />
+        </div>
+        <button type="submit"
+                class="w-full rounded-md bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2.5 transition">
+          Sign in
+        </button>
+      </form>
+    </div>
+    <p class="mt-4 text-center text-xs text-slate-400">Accounts are provisioned by your administrator.</p>
+  </div>
+</div>
+{% endblock %}
