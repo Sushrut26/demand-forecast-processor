@@ -14,3 +14,10 @@ forecastoutput_*/
 .DS_Store
 .pytest_cache/
 signing_key.txt
+build/
+dist/
+*.spec.bak
+godrej_appdata/
+LICENSE_*.txt
+generated_licenses.log
+startup_error.log

@@ -1,24 +1,22 @@
 """
-Server-side licensing using Ed25519 signed tokens.
+Ed25519 signed, time-limited license tokens for the desktop app.
 
-This evolves the desktop app's approach: keys remain self-contained and
-tamper-proof (signed with a private key held only by the vendor), but the
-server now owns time and account state, so there is no machine binding, no
-world-time lookups, and no encrypted local file.
-
-Token format (unchanged from the desktop app):  <payload_b64url>.<signature_b64url>
+Token format:  <payload_b64url>.<signature_b64url>
 where payload is a JSON object:
     {
-        "account_id": int,
         "customer_name": str,
         "issued_at": ISO-8601,
         "expires_at": ISO-8601,
         "product_code": str
     }
 
-The admin signs tokens; anyone can verify with the derived public key. Access
-is granted only while `expires_at` is in the future (checked against server
-time).
+Whoever holds the private key (LICENSE_SIGNING_KEY, generated once by
+tools/make_signing_key.py) can mint tokens with tools/generate_license.py. The
+desktop app only ever needs the public key (derived from the private key here,
+or embedded directly in the shipped app) to verify a token's authenticity.
+Verifying a signature only proves the token is authentic and unmodified; expiry
+is checked separately by the caller against a tamper-resistant time source (see
+desktop_app.py's world-time lookup), since local system clocks can't be trusted.
 """
 
 import base64
@@ -45,8 +43,8 @@ def _load_private_key() -> Ed25519PrivateKey:
 
     Accepts a PEM string (possibly with escaped newlines) or a base64-encoded
     PEM. Falls back to a freshly generated ephemeral key when unset — fine for
-    local testing, but such keys do not survive a restart, so production MUST
-    set LICENSE_SIGNING_KEY (see tools/make_signing_key.py).
+    local testing, but such keys do not survive a restart, so issuing real
+    licenses MUST set LICENSE_SIGNING_KEY (see tools/make_signing_key.py).
     """
     raw = settings.LICENSE_SIGNING_KEY.strip()
     if not raw:
@@ -78,25 +76,29 @@ def _b64url_decode(value: str) -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# Signing (admin) and verifying (activation / enforcement)
+# Signing (admin tool) and verifying (the desktop app)
 # ---------------------------------------------------------------------------
 
 def generate_token(
-    account_id: int,
     customer_name: str,
-    duration_days: int,
+    duration_days: Optional[int] = None,
     issued_at: Optional[datetime] = None,
 ) -> Tuple[str, datetime, datetime]:
     """
     Create a signed license token.
 
+    duration_days defaults to settings.DEFAULT_LICENSE_DAYS (2) when omitted —
+    this is the admin-configurable renewal period.
+
     Returns (token, issued_at, expires_at).
     """
+    if duration_days is None:
+        duration_days = settings.DEFAULT_LICENSE_DAYS
+
     issued = issued_at or datetime.now(timezone.utc)
     expires = issued + timedelta(days=duration_days)
 
     payload = {
-        "account_id": int(account_id),
         "customer_name": customer_name.strip(),
         "issued_at": issued.isoformat(),
         "expires_at": expires.isoformat(),
@@ -110,20 +112,15 @@ def generate_token(
     return token, issued, expires
 
 
-def _parse_iso(value: str) -> datetime:
+def parse_iso(value: str) -> datetime:
     dt = datetime.fromisoformat(value)
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt
 
 
-def verify_token(token: str) -> Tuple[bool, str, Optional[dict]]:
-    """
-    Verify a token's signature and product code.
-
-    Returns (is_valid, message, payload). Does NOT check expiry — callers decide
-    how to treat an expired-but-authentic token.
-    """
+def _verify_with_key(token: str, public_key: Ed25519PublicKey) -> Tuple[bool, str, Optional[dict]]:
+    """Signature + product-code check against an explicit public key. Does NOT check expiry."""
     try:
         payload_b64, signature_b64 = token.strip().split(".", 1)
         payload_bytes = _b64url_decode(payload_b64)
@@ -133,7 +130,7 @@ def verify_token(token: str) -> Tuple[bool, str, Optional[dict]]:
         return False, f"Invalid license token format: {e}", None
 
     try:
-        _PUBLIC_KEY.verify(signature_bytes, payload_bytes)
+        public_key.verify(signature_bytes, payload_bytes)
     except InvalidSignature:
         return False, "License token signature is invalid", None
 
@@ -143,25 +140,56 @@ def verify_token(token: str) -> Tuple[bool, str, Optional[dict]]:
     return True, "License token is valid", payload
 
 
-def validate_for_account(token: str, account_id: int) -> Tuple[bool, str, Optional[dict]]:
+def verify_token(token: str) -> Tuple[bool, str, Optional[dict]]:
     """
-    Full activation-time validation: signature + product + account match + not
-    expired.
+    Verify a token's signature and product code using this process's key pair
+    (loaded from LICENSE_SIGNING_KEY). Intended for the admin/CLI/test context
+    where signing and verifying happen with the same key. The shipped desktop
+    app should use verify_with_public_key_pem instead, since it must never load
+    a private key.
+
+    Returns (is_valid, message, payload). Does NOT check expiry — callers decide
+    how to treat an expired-but-authentic token (see is_expired below).
+    """
+    return _verify_with_key(token, _PUBLIC_KEY)
+
+
+def verify_with_public_key_pem(token: str, public_key_pem: str) -> Tuple[bool, str, Optional[dict]]:
+    """
+    Verify a token's signature and product code using an explicit public key
+    PEM string, with no dependency on any private key or settings. This is what
+    a distributed client (the desktop app) should call: it embeds only the
+    public key, never the private key used to mint tokens.
+    """
+    try:
+        public_key = serialization.load_pem_public_key(public_key_pem.encode("utf-8"))
+    except Exception as e:
+        return False, f"Invalid public key configured in the app: {e}", None
+
+    return _verify_with_key(token, public_key)
+
+
+def is_expired(payload: dict, now: Optional[datetime] = None) -> bool:
+    """True if the token's expires_at is at or before `now` (defaults to real time)."""
+    now = now or datetime.now(timezone.utc)
+    expires = parse_iso(payload["expires_at"])
+    return expires <= now
+
+
+def validate_customer(token: str, customer_name: str, now: Optional[datetime] = None) -> Tuple[bool, str, Optional[dict]]:
+    """
+    Full activation-time validation: signature + product + customer name match +
+    not expired (against `now`, which callers should source from a
+    tamper-resistant clock rather than the local system clock).
     """
     is_valid, message, payload = verify_token(token)
     if not is_valid:
         return False, message, None
 
-    if int(payload.get("account_id", -1)) != int(account_id):
-        return False, "This key was issued for a different account.", None
+    if payload.get("customer_name", "").strip().upper() != customer_name.strip().upper():
+        return False, "Customer name does not match the license token.", None
 
-    expires = _parse_iso(payload["expires_at"])
-    if expires <= datetime.now(timezone.utc):
+    if is_expired(payload, now):
         return False, "This key has already expired. Please request a new key.", None
 
     return True, "License token is valid", payload
-
-
-def format_key_for_display(token: str) -> str:
-    """The full token is what the customer pastes; returned as-is."""
-    return token

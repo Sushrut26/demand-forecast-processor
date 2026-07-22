@@ -1,16 +1,15 @@
-# Godrej Forecast Platform
+# Godrej Forecast Processor (Desktop)
 
-An enterprise, multi-user web application built around the Godrej demand-forecasting
-engine. Users log in, upload a demand workbook, run a forecast job, and download the
-result bundle. Accounts are vendor-provisioned, each with a **locked data-retention
-setting** and **time-limited license keys** (default 2 days, admin-configurable).
+A single-user Windows/desktop application built around the Godrej demand-forecasting
+engine. The user browses to an Excel workbook, runs the forecast, and gets back a
+folder of Excel outputs — no server, no internet dependency beyond an optional
+time check. Access is controlled by **signed, time-limited license keys** (default
+**2 days**, admin-configurable per key). When a key expires the app blocks further
+processing until the vendor issues — and the customer activates — a fresh one.
 
-It is the web evolution of the original single-user desktop tool: the forecasting
-**engine logic is preserved unchanged** (same bucketing, IQR outlier correction,
-CV²/ADI classification, full model grid-search across 8 methods, and the same Excel
-outputs). Because the server now owns identity, time, and storage, the desktop
-anti-tamper machinery (machine binding, world-time lookups, encrypted local file) is
-gone — the database is the source of truth.
+The forecasting **engine logic is preserved unchanged**: the same demand bucketing,
+IQR outlier correction, CV²/ADI classification, and full grid-search across all 8
+forecasting methods produce identical output workbooks to the original tool.
 
 ## What it does
 
@@ -21,83 +20,118 @@ corrects outliers, classifies the series, and either:
   Average, and Linear Regression, picking the lowest-MAE model, or
 - **non-smooth** series → builds a cumulative-frequency table + chart.
 
-Output: a downloadable **zip** containing one workbook per category plus
-`aggregated_forecasts.xlsx`, `summary_cfd.xlsx`, and `processing_summary.xlsx`.
+Output: a new `forecastoutput_N/` folder next to the input file containing one
+workbook per category plus `aggregated_forecasts.xlsx`, `summary_cfd.xlsx`, and
+`processing_summary.xlsx`.
 
 ## Architecture
 
-Single FastAPI service (UI + API + engine + one background worker):
-
 | Concern | Choice |
 |---|---|
-| Web + UI | FastAPI + Jinja2 templates + Tailwind (CDN) |
-| Forecasting | `app/forecast_engine.py` (ported verbatim) |
-| Jobs | In-process single-consumer queue → one job at a time (`app/jobs.py`) |
-| Database | Postgres (Supabase) in prod; SQLite locally by default |
-| File storage | Supabase Storage (retention ON); ephemeral temp dir otherwise |
-| Auth | Signed session cookies, bcrypt passwords, admin/user roles |
+| UI | Tkinter (`desktop_app.py`) — browse, run, status |
+| Forecasting | `app/forecast_engine.py` (ported verbatim, unchanged) |
 | Licensing | Ed25519 signed, time-limited tokens (`app/licensing.py`) |
+| License storage | Encrypted local file (`app/license_manager.py`) |
+| Anti-tamper time | World-time API lookup with offline/system-clock fallback |
+| Packaging | PyInstaller → standalone `.exe` (`packaging/desktop_app.spec`) |
 
-## Roles
+### Licensing model — how the trust boundary works
 
-- **Admin** (seeded from env): create accounts + users, toggle each account's
-  `store_data` retention flag, generate/revoke license keys with a configurable
-  duration, and review global job history.
-- **User**: activate a license key, upload & run jobs, download results, view history.
-  The retention setting is shown read-only — changing it means contacting the vendor.
+- A signed token's payload is `{customer_name, issued_at, expires_at, product_code}`,
+  signed with an **Ed25519 private key** only the vendor holds.
+- The shipped app embeds only the matching **public key**
+  (`LicenseManager.PUBLIC_KEY_PEM` in `app/license_manager.py`) — it can verify a
+  token's authenticity but cannot create new ones. **The private key must never be
+  bundled into the app or given to a customer.**
+- On every launch, and before every run, the app re-verifies the stored token's
+  signature and checks `expires_at` against the current time. Time comes from a
+  world-time API (`worldtimeapi.org` → `timeapi.io`) so a customer can't simply turn
+  back their system clock to extend access; if both APIs are unreachable it falls
+  back to the local system clock (`allow_offline_mode = True`).
+- When a license lapses, the app blocks "Process" and prompts for a new key. The
+  vendor runs `tools/generate_license.py` again with a fresh `duration_days` and
+  sends the new token — activating it restores access immediately.
 
 ## Run locally
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-
-# (optional) generate a persistent signing key and export it:
-python tools/make_signing_key.py
-export LICENSE_SIGNING_KEY="<paste the private PEM, or its base64/\\n form>"
-
-export ADMIN_EMAIL=admin@yourco.com ADMIN_PASSWORD=change-me
-uvicorn app.main:app --reload
 ```
 
-Then open http://localhost:8000/login. With no `DATABASE_URL` set it uses a local
-SQLite file (`./data/app.db`); with no Supabase config, retention-ON files persist to
-`./data/storage`. A sample input workbook can be generated with:
+### One-time setup: generate a signing keypair
+
+```bash
+python tools/make_signing_key.py
+```
+
+This prints a **public** and **private** PEM. For local development:
+
+```bash
+export LICENSE_SIGNING_KEY="<paste the private PEM (or its base64/\n form)>"
+export LICENSE_PUBLIC_KEY="<paste the public PEM>"
+```
+
+`LICENSE_SIGNING_KEY` is only ever needed by `tools/generate_license.py` (the admin
+tool). `LICENSE_PUBLIC_KEY` is a **dev/test convenience** so `desktop_app.py` doesn't
+need to be edited while iterating — see "Before shipping" below for the real flow.
+
+### Issue a license key
+
+```bash
+python tools/generate_license.py
+# Customer name: Acme Corp
+# Duration in days [2]: 2
+```
+
+This prints the signed token, writes `LICENSE_Acme Corp.txt` with activation
+instructions, and appends a line to `generated_licenses.log`.
+
+### Run the app
+
+```bash
+python desktop_app.py
+```
+
+First launch prompts for activation — paste the customer name and token from the
+step above. A sample input workbook for testing:
 
 ```bash
 python tools/make_sample_workbook.py sample/sample_input.xlsx
 ```
 
-## Deploy on Render (free)
+### Before shipping to a customer
 
-1. **Supabase**: create a free project. Copy the Postgres connection string
-   (`DATABASE_URL`). For persistent file storage, also copy `SUPABASE_URL` and the
-   service-role key (`SUPABASE_SERVICE_KEY`); a `forecast-files` bucket is created
-   automatically on first use.
-2. **Signing key**: run `python tools/make_signing_key.py` and keep the private key
-   for `LICENSE_SIGNING_KEY` (secret — anyone with it can mint keys).
-3. **Render**: create a Blueprint from this repo (`render.yaml`). Set the secret env
-   vars in the dashboard: `DATABASE_URL`, `LICENSE_SIGNING_KEY`, `ADMIN_EMAIL`,
-   `ADMIN_PASSWORD`, and (optionally) the Supabase storage vars. `SECRET_KEY` is
-   generated for you.
-4. Deploy. Visit `/login`, sign in as the admin, and provision your first account.
+Generate a **real, persistent** keypair (`tools/make_signing_key.py`), keep the
+private key secret on your machine only, and paste the **public** key into
+`app/license_manager.py`'s `LicenseManager.PUBLIC_KEY_PEM` before building — this is
+what makes tokens issued by `tools/generate_license.py` verify correctly in the
+shipped app.
 
-### Admin runbook
+## Build a standalone executable
 
-1. **Create account** → set its data-retention flag and the first user's credentials.
-2. **Generate license key** (duration in days, defaults to `DEFAULT_LICENSE_DAYS`=2).
-   Copy the shown token and send it to the customer.
-3. Customer **logs in → Activate** the key → access is granted until it expires.
-4. On expiry the customer is blocked from running jobs; **issue a new key** and they
-   activate it to continue. **Revoke** invalidates a key and recomputes account access.
+```bash
+pip install pyinstaller  # already in requirements.txt
+pyinstaller packaging/desktop_app.spec
+```
 
-## Free-tier notes
+Output: `dist/GodrejForecastProcessor` (or `.exe` on Windows). The public key baked
+into `app/license_manager.py` at build time travels with the executable; the private
+key never does.
 
-Render's free tier is 1 CPU / 512 MB and sleeps when idle. Jobs run one at a time to
-stay within memory; the full model search is unchanged, so very large workbooks may be
-slow or hit limits. Upload guardrails (`MAX_UPLOAD_MB`, `MAX_ROWS`,
-`MAX_CATEGORY_COLUMNS`) reject oversized inputs early. Raising the plan removes the
-ceiling with no code changes.
+## Admin runbook
+
+1. **Issue a key**: `python tools/generate_license.py` → customer name + duration
+   (days). Send the customer the printed token (or the generated `LICENSE_<name>.txt`)
+   along with the app/exe.
+2. **Customer activates**: on first launch (or via "Renew / Activate License"), they
+   enter their customer name and paste the token exactly as given.
+3. **On expiry**: the app blocks "Process" and shows the expiry date. Issue a new key
+   with step 1 (same customer name) and have them activate it — access resumes
+   immediately, no reinstall needed.
+4. **Changing the default duration**: set `DEFAULT_LICENSE_DAYS` in the environment
+   before running `tools/generate_license.py`, or just answer the duration prompt
+   directly each time.
 
 ## Tests
 
@@ -106,22 +140,28 @@ pip install pytest
 python -m pytest tests/ -q
 ```
 
-Covers engine output parity and license token signing/validation/expiry/tamper checks.
+- `tests/test_engine.py` — forecast engine output parity (bucketing, classification,
+  end-to-end `process_workbook`).
+- `tests/test_licensing.py` — Ed25519 token sign/verify/expiry/tamper checks
+  (`app/licensing.py`).
+- `tests/test_license_manager.py` — activation, expiry transitions, renewal, tampered
+  local file rejection, and customer-name/key mismatches, with the time source
+  mocked so tests don't depend on network access.
 
 ## Layout
 
 ```
 app/
-  main.py            # app wiring, admin seeding, worker launch
-  config.py          # env-driven settings
-  db.py models.py    # SQLAlchemy engine + ORM models
-  security.py auth.py# password hashing, sessions, login/logout
-  licensing.py       # Ed25519 sign/verify + expiry
-  storage.py jobs.py # persistent/ephemeral storage + background worker
-  forecast_engine.py # the forecasting core (ported verbatim)
-  routes_user.py routes_admin.py
-  templating.py templates/ static/
-tools/               # signing-key + sample-workbook generators
-tests/               # engine + licensing tests
-render.yaml          # Render blueprint
+  forecast_engine.py    # the forecasting core (ported verbatim, unchanged)
+  licensing.py           # Ed25519 sign (admin) / verify (client) + expiry helpers
+  license_manager.py     # encrypted local license storage + tamper-resistant time
+  config.py               # env-driven settings (signing key, product code, default duration)
+desktop_app.py            # Tkinter UI: browse, activate, run, status
+packaging/
+  desktop_app.spec        # PyInstaller build spec
+tools/
+  make_signing_key.py     # one-time: generate the Ed25519 keypair
+  generate_license.py     # admin: issue a signed, time-limited token
+  make_sample_workbook.py # generate a small test input workbook
+tests/                     # engine + licensing + license-manager tests
 ```

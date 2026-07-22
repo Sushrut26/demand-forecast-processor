@@ -1,9 +1,14 @@
 """
 Generate an Ed25519 signing keypair for licensing.
 
-Run once, then set the printed private key as the LICENSE_SIGNING_KEY
-environment variable on your server (Render). Keep it secret — anyone with it
-can mint license keys.
+Run this ONCE per product. Afterwards:
+  - Set the PRIVATE key as the LICENSE_SIGNING_KEY environment variable
+    wherever tools/generate_license.py runs (your machine, keep it secret —
+    anyone with it can mint valid license keys for this product).
+  - Paste the PUBLIC key into app/license_manager.py's LicenseManager.
+    PUBLIC_KEY_PEM (or set LICENSE_PUBLIC_KEY when testing) BEFORE building or
+    distributing the desktop app. The public key is safe to embed in the
+    shipped app/exe — it can only verify tokens, not create them.
 
 Usage:
     python tools/make_signing_key.py
@@ -30,9 +35,9 @@ def main() -> None:
     print("=" * 70)
     print("ED25519 LICENSE SIGNING KEYPAIR")
     print("=" * 70)
-    print("\n--- PUBLIC KEY (for reference; the app derives this itself) ---\n")
+    print("\n--- PUBLIC KEY: paste into app/license_manager.py PUBLIC_KEY_PEM ---\n")
     print(public_pem)
-    print("--- PRIVATE KEY: set this as LICENSE_SIGNING_KEY (keep secret) ---\n")
+    print("--- PRIVATE KEY: set as LICENSE_SIGNING_KEY, keep secret, never ship ---\n")
     print(private_pem)
     print("=" * 70)
     print("Tip: to store as a single-line env var, replace newlines with \\n,")
