@@ -33,7 +33,7 @@ from app.licensing import is_expired, parse_iso, verify_with_public_key_pem
 
 
 class LicenseManager:
-    PRODUCT_CODE = "GODREJ_FORECAST_PROCESSOR"
+    PRODUCT_CODE = "DEMAND_FORECAST_PROCESSOR"
 
     # Public key only — pairs with the private key held by whoever runs
     # tools/generate_license.py. Generate a real pair once with
@@ -61,12 +61,12 @@ MCowBQYDK2VwAyEAUjoF1GeTIg6ljXtSRGyW24JqU06iqCGwdsVN8ODw5E8=
         if platform.system() == "Windows":
             appdata = os.environ.get("LOCALAPPDATA", "")
             self.license_dir = (
-                Path(appdata) / "GodrejForecastProcessor" / "data"
+                Path(appdata) / "DemandForecastProcessor" / "data"
                 if appdata
-                else app_dir / "godrej_appdata"
+                else app_dir / "forecast_appdata"
             )
         else:
-            self.license_dir = app_dir / "godrej_appdata"
+            self.license_dir = app_dir / "forecast_appdata"
 
         self.license_file = self.license_dir / "license.dat"
         self.license_log = str(self.license_dir.parent / "app.log")

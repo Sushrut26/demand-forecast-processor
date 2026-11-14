@@ -1,5 +1,5 @@
 """
-LICENSE KEY GENERATOR — GODREJ FORECAST PROCESSOR
+LICENSE KEY GENERATOR — DEMAND FORECAST PROCESSOR
 
 Issues signed, time-limited license tokens for customers. Replaces the old
 unsigned SHA-256 key scheme with real Ed25519-signed tokens matching what
@@ -39,7 +39,7 @@ def issue_key(customer_name: str, duration_days: int) -> None:
     out_file = Path(f"LICENSE_{safe_name}.txt")
     out_file.write_text(
         "=" * 60 + "\n"
-        "GODREJ FORECAST PROCESSOR - LICENSE KEY\n"
+        "DEMAND FORECAST PROCESSOR - LICENSE KEY\n"
         + "=" * 60 + "\n\n"
         f"Customer Name:  {customer_name}\n"
         f"Issued:         {issued.strftime('%Y-%m-%d %H:%M UTC')}\n"
@@ -48,7 +48,7 @@ def issue_key(customer_name: str, duration_days: int) -> None:
         + "=" * 60 + "\n"
         "ACTIVATION INSTRUCTIONS\n"
         + "=" * 60 + "\n\n"
-        "1. Run the Godrej Forecast Processor application.\n"
+        "1. Run the Demand Forecast Processor application.\n"
         "2. When prompted, click 'Activate License' (or 'Renew / Activate License').\n"
         "3. Enter EXACTLY:\n\n"
         f"   Customer Name: {customer_name}\n"
@@ -79,7 +79,7 @@ def main() -> None:
         )
 
     print("=" * 70)
-    print("LICENSE KEY GENERATOR - GODREJ FORECAST PROCESSOR")
+    print("LICENSE KEY GENERATOR - DEMAND FORECAST PROCESSOR")
     print("=" * 70)
 
     while True:

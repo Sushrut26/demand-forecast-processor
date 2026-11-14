@@ -1,6 +1,6 @@
-# Godrej Forecast Processor (Desktop)
+# Demand Forecast Processor (Desktop)
 
-A single-user Windows/desktop application built around the Godrej demand-forecasting
+A single-user Windows/desktop application built around a demand-forecasting
 engine. The user browses to an Excel workbook, runs the forecast, and gets back a
 folder of Excel outputs — no server, no internet dependency beyond an optional
 time check. Access is controlled by **signed, time-limited license keys** (default
@@ -115,7 +115,7 @@ pip install pyinstaller  # already in requirements.txt
 pyinstaller packaging/desktop_app.spec
 ```
 
-Output: `dist/GodrejForecastProcessor` (or `.exe` on Windows). The public key baked
+Output: `dist/DemandForecastProcessor` (or `.exe` on Windows). The public key baked
 into `app/license_manager.py` at build time travels with the executable; the private
 key never does.
 

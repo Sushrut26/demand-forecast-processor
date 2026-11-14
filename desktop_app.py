@@ -1,5 +1,5 @@
 """
-Godrej Forecast Processor — Desktop App
+Demand Forecast Processor — Desktop App
 
 Tkinter UI wrapping the forecasting engine (app/forecast_engine.py, preserved
 verbatim) behind a time-limited license (app/license_manager.py). See
@@ -155,7 +155,7 @@ def main():
         temp_root.destroy()
 
     root = tk.Tk()
-    root.title("Godrej Forecast Processor")
+    root.title("Demand Forecast Processor")
     root.geometry("550x320")
 
     status_frame = tk.Frame(root, bg="#f0f0f0", relief=tk.RIDGE, borderwidth=2)

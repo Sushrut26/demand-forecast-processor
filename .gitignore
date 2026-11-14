@@ -17,7 +17,7 @@ signing_key.txt
 build/
 dist/
 *.spec.bak
-godrej_appdata/
+forecast_appdata/
 LICENSE_*.txt
 generated_licenses.log
 startup_error.log

@@ -1,1 +1,1 @@
-"""Godrej Forecast Platform — enterprise web application package."""
+"""Demand Forecast Processor — desktop application package."""

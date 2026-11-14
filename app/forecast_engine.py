@@ -1,6 +1,6 @@
 """
 Forecast engine — the demand-forecasting core, ported from the original
-Godrej Forecast Processor desktop application.
+Demand Forecast Processor desktop application.
 
 The pure forecasting logic is preserved unchanged so that outputs match the
 desktop app byte-for-byte in behaviour: the same demand bucketing, IQR outlier

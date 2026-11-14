@@ -1,9 +1,9 @@
-# PyInstaller spec for the Godrej Forecast Processor desktop app.
+# PyInstaller spec for the Demand Forecast Processor desktop app.
 #
 # Build from the repo root:
 #     pyinstaller packaging/desktop_app.spec
 #
-# Output: dist/GodrejForecastProcessor(.exe)
+# Output: dist/DemandForecastProcessor(.exe)
 #
 # Before building for real customers, make sure desktop_app.py's
 # LicenseManager.PUBLIC_KEY_PEM (or the LICENSE_PUBLIC_KEY env var used at
@@ -50,7 +50,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name="GodrejForecastProcessor",
+    name="DemandForecastProcessor",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
