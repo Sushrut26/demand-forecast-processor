@@ -13,8 +13,12 @@ forecastoutput_*/
 *.log
 .DS_Store
 .pytest_cache/
+signing_key.txt
 build/
 dist/
 *.spec.bak
+forecast_appdata/
+LICENSE_*.txt
+generated_licenses.log
 startup_error.log
 logs/

@@ -1,8 +1,9 @@
 """
-Demand Forecast Processor - free desktop tool
+Demand Forecast Processor - desktop tool
 
-Tkinter UI around the forecasting engine (app/forecast_engine.py). Type or paste
-the path of an Excel workbook (or use Browse to fill it in), press Run, and the
+Tkinter UI around the forecasting engine (app/forecast_engine.py), gated by a
+signed, time-limited license key (app/license_manager.py). Type or paste the
+path of an Excel workbook (or use Browse to fill it in), press Run, and the
 engine writes a folder of Excel outputs next to the input file.
 
 Everything the app does is written to a plain-text log file
@@ -19,6 +20,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 
 from app.forecast_engine import process_workbook
+from app.license_manager import LicenseManager
 
 APP_TITLE = "Demand Forecast Processor"
 SUPPORTED_EXTENSIONS = (".xlsx", ".xlsm")
@@ -34,6 +36,7 @@ def app_dir() -> Path:
 LOG_DIR = app_dir() / "logs"
 LOG_FILE = LOG_DIR / "demand_forecast_log.txt"
 _log_lock = threading.Lock()
+license_manager = LicenseManager()
 
 
 def log(message: str) -> None:
@@ -80,6 +83,59 @@ def validate_input_path(raw_path: str) -> "tuple[bool, str]":
     return True, str(path.resolve())
 
 
+def show_license_activation_dialog(parent=None) -> bool:
+    """Ask for the signed license key. Returns True if it was activated."""
+    window = tk.Toplevel(parent) if parent else tk.Toplevel()
+    window.title("License Activation")
+    window.geometry("650x420")
+    window.grab_set()
+
+    tk.Label(window, text="License Activation", font=("Arial", 14, "bold")).pack(pady=10)
+    tk.Label(
+        window,
+        text="Enter the name and the signed license key exactly as they were issued.",
+        font=("Arial", 9), fg="gray", wraplength=600,
+    ).pack(pady=5)
+
+    tk.Label(window, text="Licensed to (name):").pack(pady=5)
+    name_entry = tk.Entry(window, width=50)
+    name_entry.pack(pady=5)
+
+    tk.Label(window, text="License key:").pack(pady=5)
+    key_text = tk.Text(window, width=72, height=8, wrap=tk.WORD)
+    key_text.pack(pady=5)
+
+    result = {"activated": False}
+
+    def activate() -> None:
+        name = name_entry.get().strip()
+        token = key_text.get("1.0", tk.END).strip()
+        if not name or not token:
+            messagebox.showerror("Error", "Enter both the name and the license key.")
+            return
+        success, message = license_manager.activate_license(name, token)
+        log(f"License activation for '{name}': {'ok' if success else 'failed'} - {message}")
+        if success:
+            messagebox.showinfo("Success", "License activated.")
+            result["activated"] = True
+            window.destroy()
+        else:
+            messagebox.showerror("Activation Failed", message)
+
+    tk.Button(window, text="Activate", command=activate, width=20, bg="#4CAF50", fg="white").pack(pady=10)
+    tk.Button(window, text="Cancel", command=window.destroy, width=20).pack(pady=5)
+
+    window.wait_window()
+    return result["activated"]
+
+
+def activate_license_from_main() -> None:
+    if show_license_activation_dialog(root):
+        has_access, message, _ = license_manager.check_license_status()
+        status_label.config(text=message)
+        log(f"License status after activation: {message}")
+
+
 def browse_file() -> None:
     chosen = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx *.xlsm")])
     if chosen:
@@ -93,6 +149,13 @@ def process_files() -> None:
         messagebox.showerror("Input file", result)
         return
     selected_file = result
+
+    has_access, message, _ = license_manager.check_license_status()
+    if not has_access:
+        log(f"Run blocked by license: {message}")
+        messagebox.showerror("License", message)
+        status_label.config(text=message)
+        return
 
     def set_ui_processing_state(is_processing: bool, text_message: str = "") -> None:
         state = tk.DISABLED if is_processing else tk.NORMAL
@@ -141,16 +204,39 @@ def process_files() -> None:
 
 
 def main() -> None:
-    global root, path_var, path_entry, browse_button, process_button, info_label
+    global root, path_var, path_entry, browse_button, process_button, info_label, status_label
+
+    has_access, message, _ = license_manager.check_license_status()
+    log(f"License status at startup: {message}")
+    if not has_access:
+        temp_root = tk.Tk()
+        temp_root.withdraw()
+        response = messagebox.askquestion(
+            "License Required", f"{message}\n\nWould you like to activate a license key now?"
+        )
+        activated = response == "yes" and show_license_activation_dialog(temp_root)
+        temp_root.destroy()
+        if not activated:
+            log("Closed without an active license")
+            return
+        has_access, message, _ = license_manager.check_license_status()
+        if not has_access:
+            log(f"License still not active after activation: {message}")
+            return
 
     root = tk.Tk()
     root.title(APP_TITLE)
-    root.geometry("620x280")
+    root.geometry("620x340")
 
     tk.Label(root, text=APP_TITLE, font=("Arial", 13, "bold")).pack(pady=(12, 2))
-    tk.Label(
-        root, text="Free desktop tool: Excel in, Excel out.", font=("Arial", 9), fg="gray"
-    ).pack()
+    status_frame = tk.Frame(root)
+    status_frame.pack(pady=(4, 0))
+    status_label = tk.Label(status_frame, text=message, fg="#155724", font=("Arial", 9, "bold"))
+    status_label.pack(side=tk.LEFT)
+    tk.Button(
+        status_frame, text="Renew / Activate License", command=activate_license_from_main,
+        font=("Arial", 8),
+    ).pack(side=tk.LEFT, padx=(8, 0))
 
     tk.Label(root, text="Path of the input Excel workbook:", font=("Arial", 10)).pack(
         anchor="w", padx=20, pady=(14, 2)

@@ -7,10 +7,13 @@ desktop app byte-for-byte in behaviour: the same demand bucketing, IQR outlier
 correction, CV2/ADI classification, the full model grid-search across the eight
 forecasting methods, and the same Excel output files.
 
-The Tkinter UI and the `main()` / `__main__` bits live in desktop_app.py, so
-this module is pure forecasting logic with no UI or network dependencies.
+The only things removed relative to the desktop script are the Tkinter UI, the
+`SecureLicenseManager`, the world-time APIs, machine-id lookups, and the
+`main()` / `__main__` bits — none of which belong on a server, where the
+database is the source of truth for identity, time and licensing.
 
-`process_workbook(input_path, output_dir, workers)` is the single entry point.
+`process_workbook(input_path, output_dir, workers)` is the single entry point
+used by the background job worker.
 """
 
 import math

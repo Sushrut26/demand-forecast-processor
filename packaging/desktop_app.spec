@@ -4,6 +4,11 @@
 #     pyinstaller packaging/desktop_app.spec
 #
 # Output: dist/DemandForecastProcessor(.exe)
+#
+# Before building for real customers, make sure desktop_app.py's
+# LicenseManager.PUBLIC_KEY_PEM (or the LICENSE_PUBLIC_KEY env var used at
+# build time) holds the PUBLIC half of the key pair whose PRIVATE half you use
+# with tools/generate_license.py — otherwise issued licenses won't verify.
 
 import sys
 from pathlib import Path
